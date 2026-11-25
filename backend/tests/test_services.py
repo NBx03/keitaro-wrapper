@@ -293,3 +293,138 @@ def test_search_offers_case_insensitive_and_by_id(
 
     by_id = search_offers(db_session, fake_kt, query="18003")  # type: ignore[arg-type]
     assert [o.keitaro_id for o in by_id] == [18003]
+
+
+def test_add_already_removed_offer_restores_without_conflict(
+    db_session: Session,
+    fake_kt: FakeKeitaroClient,
+) -> None:
+    campaign = create_campaign_with_flows(
+        db_session,
+        fake_kt,  # type: ignore[arg-type]
+        name="Re-add Removed",
+        geo="CL",
+        offer_id=18001,
+    )
+    stream = _offer_stream(campaign)
+    stream = add_offer(db_session, fake_kt, stream.id, 18002)  # type: ignore[arg-type]
+    stream = push_stream_to_kt(db_session, fake_kt, stream.id)  # type: ignore[arg-type]
+
+    stream = remove_offer(db_session, stream.id, 18002)
+    stream = push_stream_to_kt(db_session, fake_kt, stream.id)  # type: ignore[arg-type]
+
+    # Calling add_offer on a removed offer acts like bring_back cleanly
+    stream = add_offer(db_session, fake_kt, stream.id, 18002)  # type: ignore[arg-type]
+    by_id = {o.offer_keitaro_id: o for o in stream.stream_offers}
+    assert by_id[18002].draft_state == "active"
+    assert by_id[18001].draft_share == 50
+    assert by_id[18002].draft_share == 50
+
+
+def test_remove_then_bring_back_before_push_restores_clean_state(
+    db_session: Session,
+    fake_kt: FakeKeitaroClient,
+) -> None:
+    campaign = create_campaign_with_flows(
+        db_session,
+        fake_kt,  # type: ignore[arg-type]
+        name="Remove Bring Back Clean",
+        geo="AU",
+        offer_id=18001,
+    )
+    stream = _offer_stream(campaign)
+    for oid in (18002, 18003):
+        stream = add_offer(db_session, fake_kt, stream.id, oid)  # type: ignore[arg-type]
+    stream = push_stream_to_kt(db_session, fake_kt, stream.id)  # type: ignore[arg-type]
+    assert compute_stream_dirty(stream.stream_offers) is False
+
+    # Remove first offer (34%) -> dirty, then Bring Back -> returns to [34, 33, 33] -> clean!
+    stream = remove_offer(db_session, stream.id, 18001)
+    assert compute_stream_dirty(stream.stream_offers) is True
+    stream = bring_back_offer(db_session, stream.id, 18001)
+    assert compute_stream_dirty(stream.stream_offers) is False
+    assert [(o.offer_keitaro_id, o.draft_share) for o in stream.stream_offers] == [
+        (18001, 34),
+        (18002, 33),
+        (18003, 33),
+    ]
+
+
+def test_all_pinned_sum_not_100_fails_push_validation(
+    db_session: Session,
+    fake_kt: FakeKeitaroClient,
+) -> None:
+    campaign = create_campaign_with_flows(
+        db_session,
+        fake_kt,  # type: ignore[arg-type]
+        name="All Pinned Sum 50",
+        geo="DE",
+        offer_id=18001,
+    )
+    stream = _offer_stream(campaign)
+    stream = add_offer(db_session, fake_kt, stream.id, 18002)  # type: ignore[arg-type]
+    stream = push_stream_to_kt(db_session, fake_kt, stream.id)  # type: ignore[arg-type]
+
+    # Externally set 25% + 25% in KT -> fetch -> pin both -> push fails with 422
+    fake_kt.streams[stream.keitaro_id]["offers"] = [
+        {"offer_id": 18001, "share": 25, "state": "active"},
+        {"offer_id": 18002, "share": 25, "state": "active"},
+    ]
+    campaign = fetch_campaign_streams(db_session, fake_kt, campaign.keitaro_id)  # type: ignore[arg-type]
+    stream = _offer_stream(campaign)
+    stream = toggle_pin(db_session, stream.id, 18001, True)
+    stream = toggle_pin(db_session, stream.id, 18002, True)
+
+    with pytest.raises(ValidationError, match="sum to 100%"):
+        push_stream_to_kt(db_session, fake_kt, stream.id)  # type: ignore[arg-type]
+
+
+def test_external_stream_add_delete_new_offer_and_manual_campaign(
+    db_session: Session,
+    fake_kt: FakeKeitaroClient,
+) -> None:
+    # Manually created campaign in KT without domain_id, position=0 action stream, + uncached offer
+    manual = fake_kt.create_campaign({"name": "Manual KT Campaign"})
+    s_action = fake_kt.create_stream(
+        {
+            "campaign_id": manual["id"],
+            "name": "Action Zero",
+            "type": "regular",
+            "position": 0,
+            "schema": "action",
+            "action_type": "show404",
+        }
+    )
+    fake_kt.offers[18999] = {"id": 18999, "name": "18999 Brand New", "group_id": 7101}
+    s_offers = fake_kt.create_stream(
+        {
+            "campaign_id": manual["id"],
+            "name": "Manual Offers",
+            "type": "default",
+            "position": 1,
+            "schema": "landings",
+            "offers": [{"offer_id": 18999, "share": 100, "state": "active"}],
+        }
+    )
+
+    fetched = fetch_campaign_streams(db_session, fake_kt, manual["id"])  # type: ignore[arg-type]
+    assert fetched.tracking_url is None
+    assert [s.position for s in sorted(fetched.streams, key=lambda x: x.position)] == [0, 1]
+    assert fetched.streams[1].stream_offers[0].offer.name == "18999 Brand New"
+
+    # Externally delete s_action and add a new stream in Keitaro
+    del fake_kt.streams[s_action["id"]]
+    s_new = fake_kt.create_stream(
+        {
+            "campaign_id": manual["id"],
+            "name": "Extra Geo",
+            "type": "regular",
+            "position": 2,
+            "schema": "redirect",
+            "action_type": "http",
+            "action_payload": "https://google.com",
+        }
+    )
+
+    refetched = fetch_campaign_streams(db_session, fake_kt, manual["id"])  # type: ignore[arg-type]
+    assert {s.keitaro_id for s in refetched.streams} == {s_offers["id"], s_new["id"]}

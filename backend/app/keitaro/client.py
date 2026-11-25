@@ -103,20 +103,27 @@ class KeitaroClient:
             raise KeitaroError(f"Keitaro request failed: {exc}") from exc
 
         elapsed_ms = (time.monotonic() - start) * 1000
-        logger.info(
-            "Keitaro %s %s -> %s (%.1fms)",
-            method,
-            path,
-            response.status_code,
-            elapsed_ms,
-        )
-
         if response.is_success:
+            logger.info(
+                "Keitaro %s %s -> %s (%.1fms)",
+                method,
+                path,
+                response.status_code,
+                elapsed_ms,
+            )
             if not response.content:
                 return None
             return response.json()
 
         detail = self._extract_error_detail(response)
+        logger.warning(
+            "Keitaro %s %s -> %s (%.1fms): %s",
+            method,
+            path,
+            response.status_code,
+            elapsed_ms,
+            detail,
+        )
         if response.status_code == 404:
             raise KeitaroNotFoundError(detail, status_code=404)
         if response.status_code in (400, 422):

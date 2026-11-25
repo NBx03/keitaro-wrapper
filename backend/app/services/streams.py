@@ -1,3 +1,5 @@
+import logging
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -12,6 +14,8 @@ from app.services.exceptions import (
     ValidationError,
 )
 from app.services.weights import recalculate_shares
+
+logger = logging.getLogger(__name__)
 
 
 def _get_stream_or_404(db: Session, stream_id: int) -> Stream:
@@ -185,12 +189,23 @@ def push_stream_to_kt(db: Session, kt: KeitaroClient, stream_id: int) -> Stream:
             f"Active offer shares must sum to 100% before pushing (got {total_share}%)"
         )
     if any(row.draft_share <= 0 or row.draft_share > 100 for row in active_rows):
-        raise ValidationError("Every active offer share must be between 1% and 100%")
+        raise ValidationError(
+            "Every active offer share must be between 1% and 100% "
+            "(unpin offers or adjust weights so every active offer gets at least 1%)"
+        )
 
+    shares_summary = [(row.offer_keitaro_id, row.draft_share) for row in active_rows]
     payload = build_update_stream_offers_payload(stream.raw_payload, active_rows)
     try:
         updated_remote = kt.update_stream(stream.keitaro_id, payload)
     except KeitaroError as exc:
+        logger.warning(
+            "Failed to push stream #%s (kt_id=%s, offers=%s): %s",
+            stream.id,
+            stream.keitaro_id,
+            shares_summary,
+            exc,
+        )
         raise ExternalServiceError(f"Failed to push stream to Keitaro: {exc}") from exc
 
     stream.raw_payload = updated_remote
@@ -198,4 +213,10 @@ def push_stream_to_kt(db: Session, kt: KeitaroClient, stream_id: int) -> Stream:
         row.published_state = row.draft_state
         row.published_share = row.draft_share
     db.commit()
+    logger.info(
+        "Pushed stream #%s (kt_id=%s) to Keitaro with offers=%s",
+        stream.id,
+        stream.keitaro_id,
+        shares_summary,
+    )
     return _get_stream_or_404(db, stream_id)

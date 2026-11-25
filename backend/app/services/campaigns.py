@@ -235,6 +235,13 @@ def create_campaign_with_flows(
         raise ExternalServiceError(f"Failed to create campaign in Keitaro: {exc}") from exc
 
     kt_campaign_id = int(created_campaign["id"])
+    logger.info(
+        "Created Keitaro campaign #%s (name=%r, geo=%s, offer_id=%s)",
+        kt_campaign_id,
+        clean_name,
+        clean_geo,
+        offer_id,
+    )
 
     try:
         kt.create_stream(build_flow1_redirect_payload(kt_campaign_id, clean_geo))
@@ -330,7 +337,8 @@ def fetch_campaign_streams(
         kt_stream_id = int(stream_data["id"])
         schema = str(stream_data.get("schema") or "")
         has_offers = schema == "landings"
-        position = int(stream_data.get("position") or (idx + 1))
+        raw_pos = stream_data.get("position")
+        position = int(raw_pos) if raw_pos is not None else (idx + 1)
 
         stream = existing_streams_by_kt.get(kt_stream_id)
         if stream is None:
@@ -355,6 +363,11 @@ def fetch_campaign_streams(
         _sync_stream_offers(db, stream, stream_data if has_offers else None)
 
     db.commit()
+    logger.info(
+        "Synced campaign #%s from Keitaro (%s streams)",
+        campaign_keitaro_id,
+        len(remote_streams),
+    )
     return db.scalar(
         select(Campaign)
         .where(Campaign.id == campaign.id)

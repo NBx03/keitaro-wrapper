@@ -21,6 +21,7 @@ export function App() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const toastIdRef = useRef(0);
+  const detailRequestSeqRef = useRef(0);
 
   const notify = useCallback((type: "success" | "error", message: string) => {
     const id = ++toastIdRef.current;
@@ -47,11 +48,13 @@ export function App() {
   }, [loadCampaigns]);
 
   async function handleSelectCampaign(keitaroId: number) {
+    const seq = ++detailRequestSeqRef.current;
     setViewMode("detail");
     setSelectedCampaignId(keitaroId);
     setLoadingDetail(true);
     try {
       const detail = await apiClient.getCampaign(keitaroId);
+      if (detailRequestSeqRef.current !== seq) return;
       setCampaignDetail(detail);
       setCampaigns((prev) =>
         prev.map((c) =>
@@ -59,14 +62,24 @@ export function App() {
         ),
       );
     } catch (err) {
+      if (detailRequestSeqRef.current !== seq) return;
       notify("error", err instanceof Error ? err.message : "Не удалось загрузить кампанию");
       setCampaignDetail(null);
     } finally {
-      setLoadingDetail(false);
+      if (detailRequestSeqRef.current === seq) {
+        setLoadingDetail(false);
+      }
     }
   }
 
+  function handleOpenCreate() {
+    ++detailRequestSeqRef.current;
+    setLoadingDetail(false);
+    setViewMode("create");
+  }
+
   function handleCampaignCreated(created: CampaignDetailOut) {
+    ++detailRequestSeqRef.current;
     setCampaigns((prev) => [
       {
         keitaro_id: created.keitaro_id,
@@ -78,21 +91,28 @@ export function App() {
     ]);
     setSelectedCampaignId(created.keitaro_id);
     setCampaignDetail(created);
+    setLoadingDetail(false);
     setViewMode("detail");
     notify("success", `Кампания «${created.name}» создана в Keitaro`);
   }
 
   async function handleFetchStreams() {
     if (!campaignDetail) return;
+    const seq = ++detailRequestSeqRef.current;
+    const targetId = campaignDetail.keitaro_id;
     setFetchingStreams(true);
     try {
-      const updated = await apiClient.fetchCampaign(campaignDetail.keitaro_id);
+      const updated = await apiClient.fetchCampaign(targetId);
+      if (detailRequestSeqRef.current !== seq) return;
       setCampaignDetail(updated);
       notify("success", "Потоки синхронизированы из Keitaro");
     } catch (err) {
+      if (detailRequestSeqRef.current !== seq) return;
       notify("error", err instanceof Error ? err.message : "Ошибка синхронизации из Keitaro");
     } finally {
-      setFetchingStreams(false);
+      if (detailRequestSeqRef.current === seq) {
+        setFetchingStreams(false);
+      }
     }
   }
 
@@ -127,7 +147,7 @@ export function App() {
         <button
           type="button"
           className="btn btn--sm btn--primary"
-          onClick={() => setViewMode("create")}
+          onClick={handleOpenCreate}
         >
           <Plus size={15} />
           Новая
@@ -142,7 +162,7 @@ export function App() {
         mobileOpen={mobileOpen}
         onCloseMobile={() => setMobileOpen(false)}
         onSelectCampaign={handleSelectCampaign}
-        onOpenCreate={() => setViewMode("create")}
+        onOpenCreate={handleOpenCreate}
         onRefresh={() => void loadCampaigns()}
       />
 
@@ -187,7 +207,7 @@ export function App() {
               <button
                 type="button"
                 className="btn btn--primary"
-                onClick={() => setViewMode("create")}
+                onClick={handleOpenCreate}
               >
                 <Plus size={16} />
                 Создать кампанию

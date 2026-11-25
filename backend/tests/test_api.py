@@ -168,6 +168,13 @@ def test_stream_editor_http_workflow_and_error_codes(
     assert canceled.json()["is_dirty"] is False
     assert canceled.json()["offers"][-1]["draft_state"] == "removed"
 
+    # Re-adding removed offer via POST /offers restores it cleanly without 409
+    readded = api_client.post(f"/api/streams/{stream_id}/offers", json={"offer_id": 18003})
+    assert readded.status_code == 200
+    assert readded.json()["is_dirty"] is True
+    assert readded.json()["offers"][-1]["draft_state"] == "active"
+    assert api_client.post(f"/api/streams/{stream_id}/cancel").status_code == 200
+
     # Upstream KeitaroError maps to 502
     def _boom(_sid: int, _payload: dict[str, Any]) -> dict[str, Any]:
         raise KeitaroError("Upstream down", status_code=503)

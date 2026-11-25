@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -15,6 +16,19 @@ from app.services.exceptions import (
     NotFoundError,
     ValidationError,
 )
+
+
+def _configure_logging() -> None:
+    app_logger = logging.getLogger("app")
+    if not app_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s"))
+        app_logger.addHandler(handler)
+    app_logger.setLevel(logging.INFO)
+    app_logger.propagate = False
+
+
+_configure_logging()
 
 
 @asynccontextmanager
