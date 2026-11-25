@@ -1,0 +1,57 @@
+:root {
+  /* Surfaces */
+  --bg-canvas: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-subtle: #f1f5f9;
+  --bg-dirty: #fffbeb;
+  --bg-dirty-footer: #fef9e7;
+
+  /* Borders */
+  --border-default: #e2e8f0;
+  --border-hover: #cbd5e1;
+  --border-dirty: #fcd34d;
+  --border-dirty-accent: #f59e0b;
+
+  /* Text */
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --text-removed: #64748b;
+
+  /* Primary / Accent */
+  --accent-primary: #2563eb;
+  --accent-primary-hover: #1d4ed8;
+  --accent-soft: #eff6ff;
+  --accent-soft-border: #bfdbfe;
+
+  /* Semantic */
+  --success-bg: #059669;
+  --success-hover: #047857;
+  --success-soft-bg: #ecfdf5;
+  --success-soft-text: #065f46;
+  --success-soft-border: #a7f3d0;
+
+  --warning-badge-bg: #fef3c7;
+  --warning-badge-text: #92400e;
+
+  --danger-hover-bg: #fef2f2;
+  --danger-hover-text: #dc2626;
+  --danger-hover-border: #fecaca;
+
+  --removed-badge-bg: #e2e8f0;
+  --removed-badge-text: #475569;
+
+  /* Typography */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Radii & Shadows */
+  --radius-card: 12px;
+  --radius-control: 8px;
+  --radius-pill: 9999px;
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-dropdown: 0 8px 20px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.05);
+
+  /* Layout */
+  --sidebar-width: 290px;
+}
